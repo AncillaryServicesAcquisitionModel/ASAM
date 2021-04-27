@@ -2,6 +2,10 @@
 Ancillary Services Acquisition Model (ASAM) - Agent-based model to simulate processes of ancillary services acquisition and electricity markets.
 
 
-https://doi.org/10.5281/zenodo.4722910
+
+
+[![DOI](https://zenodo.org/badge/353654651.svg)](https://zenodo.org/badge/latestdoi/353654651)
+
+
 
 
