@@ -1,0 +1,3 @@
+The results of this simulation were used in the following publication:
+Ancillary Services Acquisition Model: considering market interactions in policy design
+https://arxiv.org/abs/2104.13047
