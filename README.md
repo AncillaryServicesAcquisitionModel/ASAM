@@ -10,7 +10,7 @@ https://arxiv.org/abs/2104.13047
 
 Please use this publication also for citing the model.
 
-![ASAM overview](https://github.com/AncillaryServicesAcquisitionModel/ASAM/tree/main/doc/img/ASAM_overview.png?raw=true)
+![ASAM overview](https://github.com/AncillaryServicesAcquisitionModel/ASAM/blob/main/doc/img/ASAM_overview.png?raw=true)
 
 
 
