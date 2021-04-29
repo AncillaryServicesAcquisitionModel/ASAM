@@ -6,8 +6,8 @@ Ancillary Services Acquisition Model (ASAM) - Agent-based model to simulate proc
 
 The model is described in the following publication:
 Ancillary Services Acquisition Model: considering market interactions in policy design.
-https://arxiv.org/abs/2104.13047
 
+Pre-print: https://arxiv.org/abs/2104.13047
 Please use this publication also for citing the model.
 
 ![ASAM overview](https://github.com/AncillaryServicesAcquisitionModel/ASAM/blob/main/doc/img/ASAM_overview.png?raw=true)
