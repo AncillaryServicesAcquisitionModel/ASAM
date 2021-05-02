@@ -11,8 +11,7 @@ Pre-print: https://arxiv.org/abs/2104.13047
 
 Please use this publication also for citing the model.
 
-See for further documentation the ASAM wiki
-![wiki(https://github.com/AncillaryServicesAcquisitionModel/ASAM/wiki)
+See for further documentation the ASAM wiki https://github.com/AncillaryServicesAcquisitionModel/ASAM/wiki
 
 ![ASAM overview](https://github.com/AncillaryServicesAcquisitionModel/ASAM/blob/main/doc/img/ASAM_overview.png?raw=true)
 
