@@ -11,6 +11,8 @@ Pre-print on arxiv: [link](https://arxiv.org/abs/2104.13047)
 
 Please use this publication also for citing the model.
 
+A detailed description of the strategies of market party agents in ASAM can be found in this [preprint](https://www.researchgate.net/publication/351548505_Ancillary_Services_Acquisition_Model_heuristic_agent_strategies) 
+
 See for further documentation the ASAM [wiki](https://github.com/AncillaryServicesAcquisitionModel/ASAM/wiki)
 
 ![ASAM overview](https://github.com/AncillaryServicesAcquisitionModel/ASAM/blob/main/doc/img/ASAM_overview.png?raw=true)
