@@ -15,9 +15,10 @@ A detailed description of the strategies of market party agents in ASAM can be f
 
 See for further documentation the ASAM [wiki](https://github.com/AncillaryServicesAcquisitionModel/ASAM/wiki)
 
+Furthermore, there is a [discussion section](https://github.com/AncillaryServicesAcquisitionModel/ASAM/discussions) for questions, ideas and collaboration.
+
 ![ASAM overview](https://github.com/AncillaryServicesAcquisitionModel/ASAM/blob/main/doc/img/ASAM_overview.png?raw=true)
 
-Furhtermore, there is a [discussion section](https://github.com/AncillaryServicesAcquisitionModel/ASAM/discussions) for questions, ideas and collaboration
 
 
 
