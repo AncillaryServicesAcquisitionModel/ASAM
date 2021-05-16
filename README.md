@@ -17,6 +17,7 @@ See for further documentation the ASAM [wiki](https://github.com/AncillaryServic
 
 ![ASAM overview](https://github.com/AncillaryServicesAcquisitionModel/ASAM/blob/main/doc/img/ASAM_overview.png?raw=true)
 
+Furhtermore, there is a [discussion section](https://github.com/AncillaryServicesAcquisitionModel/ASAM/discussions) for questions, ideas and collaboration
 
 
 
