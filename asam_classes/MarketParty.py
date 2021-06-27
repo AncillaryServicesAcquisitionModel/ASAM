@@ -988,12 +988,15 @@ class MarketParty(Agent):
                         if self.strategy['IDM_pricing'] == 'marg_obook_plus_startstop_plus_partialcall':
                             #start and stop capacity prices for IDCONS include a partial call markup
                             #(assuming that also start stop offers could be partially cleared in line with limit orders)
-                            price_start_lst, start_markup = self.startstop_markup(
+                            start_markup = self.startstop_markup(
                                     direction = 'upward', of_quantity = startblocks,
                                     asset = a, gct = gate_closure_MTU, partial_call=True)
-                            price_stop_lst, stop_markup = self.startstop_markup(
+                            stop_markup = self.startstop_markup(
                                     direction = 'downward', of_quantity = stopblocks,
                                     asset = a, gct = gate_closure_MTU, partial_call=True)
+                            price_start_lst, price_stop_lst = add_markups_to_price_list(
+                               [a.srmc] * len (start_markup), [a.srmc] * len (stop_markup),
+                              start_markup, stop_markup)
                         if self.strategy['IDM_quantity']=='all_plus_cond_startstop':
                             #Ramping markups are only required for strategies with larget ('all') quanities.
                             #Small random quantities do not need a ramping mark-up, as no additional risk is imposed.
