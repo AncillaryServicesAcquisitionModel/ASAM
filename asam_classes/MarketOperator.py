@@ -722,10 +722,16 @@ class MO_dayahead(MarketOperator):
                         self.commit_model.generators_t.p_max_pu[asset.assetID] = unav_h.loc[indx,'p_max_t'].values.copy()
                         self.commit_model.generators_t.p_min_pu[asset.assetID] = unav_h.loc[indx,'p_min_t'].values.copy()
 
+
+
             #daytime of last dispatch for initial generator status determination
-            if not self.model.rpt.prices['DAP'].empty:
-                init_time= self.model.rpt.prices['DAP'].index[-1]
-            else:
+            if not self.model.schedule.steps == 0:
+                try:
+                    init_time= self.model.rpt.prices['DAP'].loc[self.model.rpt.prices['DAP'].notnull()].index[-1]
+                except:
+                    import pdb
+                    pdb.set_trace()
+            else: #this is the first simulation step. no previous dispatch available
                 # a test run is needed to determine initial dispatch
                 init_time= None
                 try:
@@ -739,6 +745,7 @@ class MO_dayahead(MarketOperator):
                 except:
                     import pdb
                     pdb.set_trace()
+
             for agent in self.model.schedule.agents:
                 for asset in agent.assets['object']:
                     #ensure that the initial status taken into account
