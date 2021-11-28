@@ -107,7 +107,7 @@ class ExoData():
                                                           ,'redispatch_areas_down',
                                                           'redispatch_areas_up',
                                                           'identification_day',
-                                                          'identification_mtu']]
+                                                          'identification_MTU']]
                 self.congestions.set_index(['delivery_day','delivery_time'], inplace=True)
             elif self.sim_task['congestions'] =='exogenious':
                 self.congestions = simulation_parameters['congestions']

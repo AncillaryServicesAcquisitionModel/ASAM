@@ -228,15 +228,17 @@ class GridSystemOperator():
 
         elif self.model.exodata.sim_task['congestions'] == 'from_scenario':
             #select all congestions within the schedules horizon with idetification time == current
-            new_congestion = self.model.exodata.congestions.loc[
-                    self.model.exodata.congestions.index.isin(self.model.schedules_horizon.index.values)]
+            if self.model.exodata.congestions is not None:
+                new_congestion = self.model.exodata.congestions.loc[
+                        self.model.exodata.congestions.index.isin(self.model.schedules_horizon.index.values)]
 
-            new_congestion = new_congestion.loc[(new_congestion['identification_day'] ==
-                            self.model.schedules_horizon.index.values[0][0])&(
-                    new_congestion['identification_mtu'] ==
-                            self.model.schedules_horizon.index.values[0][1])].copy()
-
-            if new_congestion.empty:
+                new_congestion = new_congestion.loc[(new_congestion['identification_day'] ==
+                                self.model.schedules_horizon.index.values[0][0])&(
+                        new_congestion['identification_MTU'] ==
+                                self.model.schedules_horizon.index.values[0][1])].copy()
+                if new_congestion.empty:
+                    return(None)
+            else:
                 return(None)
             #make dataframe with areas as columns and horizon as index
             new_red_demand = pd.concat([self.model.schedules_horizon.copy(), DataFrame(columns=(self.model.gridareas))])

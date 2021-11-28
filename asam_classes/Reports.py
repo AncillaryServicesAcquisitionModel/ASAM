@@ -499,10 +499,11 @@ class Reports():
         r_pi['redispatch_demand'] = np.nan
 
         #Get all identified congestions up to this simulation step
-        cong = self.model.exodata.congestions.set_index(['identification_day','identification_MTU']).loc[
+        cong = self.model.exodata.congestions.reset_index().set_index(['identification_day','identification_MTU']).sort_index().loc[
                     :self.model.schedules_horizon.index[0]]
         #ensure that congestions before starttime are not considered
         cong=cong.loc[(self.model.exodata.sim_task[ 'start_day'],self.model.exodata.sim_task[ 'start_MTU']):].reset_index()
+
 
         if self.model.exodata.sim_task['congestions'] == 'exogenious':
             if cong.empty:
