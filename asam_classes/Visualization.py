@@ -156,19 +156,19 @@ class Visualizations():
                             stacked=True, grid = True, subplots = False,
                             legend=False, title =titl, color=[
                                   'mediumaquamarine','cornflowerblue','mediumpurple','orange'])
-#                                    'cornflowerblue','mediumpurple','orange'])
+
             df[['DAM_neg','IDM_neg','RDM_neg','neg_FE']].plot.area(ax = ax,
                             stacked=True, grid = True, subplots = False,
                             legend=False, title =titl, color=[
                                     'mediumaquamarine','cornflowerblue','mediumpurple','orange'])
-#                                    'cornflowerblue','mediumpurple','orange'])
+
             df[['total_trade','total_dispatch','imbalance_position']].plot(ax = ax,
                 grid = True, subplots = False, style="--",
                 legend=False, title =titl, color=['darkgreen','darkblue','red'])
             if choice==True:
                 handels, labels =  ax.get_legend_handles_labels()
             ax.set_ylim(bottom=ymin, top = ymax)
-            if (i >=12):
+            if (i >=len(key_lst)-number_col):
                 plt.xlabel('delivery_day, delivery_MTU')
             else:
                 plt.xlabel('')
@@ -216,55 +216,121 @@ class Visualizations():
     def show_dispatch_per_agent(self,only_agent =None,header=False):
 
         """
-        Method: all trade schedules are plotted per market party
+        Method: all dispatch schedules are plotted per market party
 
         Input: with only_agent (string agent name), a single agent can be plotted
         """
-
-        #get the right time for the graph
-        day, MTU=   self.model.clock.calc_timestamp_by_steps(self.model.schedule.steps -1, 0)
         print('-----plot show_dispatch_per_agent')
+         #get the right time for the graph
+        day, MTU=   self.model.clock.calc_timestamp_by_steps(self.model.schedule.steps -1, 0)
+
         def format_fn(tick_val, tick_pos):
             """local function to set ticks on x axes"""
             if int(tick_val) in xs:
                 return labels[int(tick_val)]
             else:
                 return ''
-        asset_owners_set={}
 
-        fig = plt.figure(figsize=(10,10));
+        asset_owners_set={}
+        if not only_agent:
+            for agent in self.model.schedule.agents:
+                all_scheds ={}
+                for asset in agent.assets['object']:
+                    name =  asset.assetID
+                    all_scheds[name]=asset.schedule['commit']/asset.pmax*100
+                asset_owners_set[agent.unique_id]=all_scheds.copy()
+
+        else:
+            agent = self.model.MP_dict[only_agent]
+            all_scheds ={}
+            for asset in agent.assets['object']:
+                    name =  asset.assetID
+                    all_scheds[name]=asset.schedule['commit']/asset.pmax*100
+            asset_owners_set[agent.unique_id]=all_scheds.copy()
+        key_lst=sorted(asset_owners_set.keys())
+
+        if len(key_lst) ==1:
+            fwidth = 7
+            fhight = 6
+            number_rows = 1
+            number_col = 1
+        elif len(key_lst)< 5:
+            fwidth = 8
+            fhight = 8
+            number_rows = 2
+            number_col = 2
+        else:
+            fwidth = 10
+            fhight = 11.5
+            number_rows = round((len(key_lst)+len(key_lst)%4)/4)
+            number_col = 4
+
+        fig = plt.figure(figsize=(fwidth,fhight));
         suptitl='Asset dispatch at day {} MTU {}'.format(day,MTU)
         if header==True:
             plt.suptitle(suptitl)
-        for agent in self.model.schedule.agents:
-            all_scheds ={}
-            for asset in agent.assets['object']:
-                name =  asset.assetID
-                all_scheds[name]=asset.schedule['commit']/asset.pmax*100
-            asset_owners_set[agent.unique_id]=all_scheds.copy()
-        key_lst=sorted(asset_owners_set.keys())
         for i in range(len(key_lst)):
-            ax = fig.add_subplot(2,2,i+1)
+            if i == 0:
+                choice = True
+            else:
+                choice = False
+            ax = fig.add_subplot(number_rows, number_col, i+1)
+
             asset_lst=sorted(asset_owners_set[key_lst[i]].keys())
             for k in range(len(asset_lst)):
                 df = asset_owners_set[key_lst[i]][asset_lst[k]]
-                titl = 'Dispatch of agent {0}'.format(key_lst[i],day,MTU)
+                titl = 'agent {0}'.format(key_lst[i],day,MTU)
+                # Shrink current axis by 30%
+                box = ax.get_position()
+                ax.set_position([box.x0, box.y0, box.width, box.height])
                 xs=range(len(df))
                 labels = df.index.values
                 ax.xaxis.set_major_formatter(FuncFormatter(format_fn))
                 ax.plot(df.values, drawstyle ='steps-pre', label=asset_lst[k])
                 plt.title(titl)
-                ax.legend(loc="best")
+                if only_agent:
+                    ax.legend(loc="best")
                 ax.grid(True)
                 ax.set_ylim(bottom=0, top = 105)
-                if (i ==2)|(i==3):
-                    plt.xlabel('delivery_day, delivery_MTU')
-                if (i ==0)|(i==2):
-                    plt.ylabel('% of Pmax')
+
+            if choice==True:
+                handels, labels =  ax.get_legend_handles_labels()
+            if (i >=len(key_lst)-number_col):
+                plt.xlabel('delivery_day, delivery_MTU')
+            else:
+                plt.xlabel('')
+            if (i %4==0):
+                plt.ylabel('% of pmax')
+
+        if len(key_lst)>= 5:
+            plt.subplots_adjust(top=0.89,
+                                bottom=0.04,
+                                left=0.09,
+                                right=0.97,
+                                hspace=0.29,
+                                wspace=0.315)
+
+        elif len(key_lst)== 1:
+            plt.subplots_adjust(top=0.8,
+                                bottom=0.045,
+                                left=0.115,
+                                right=0.96,
+                                hspace=0.29,
+                                wspace=0.315)
+        else:
+            plt.subplots_adjust(
+                            top=0.86,
+                            bottom=0.04,
+                            left=0.09,
+                            right=0.97,
+                            hspace=0.29,
+                            wspace=0.315)
 
         stamp=str(datetime.now().replace(microsecond=0))
         stamp=stamp.replace('.','')
         stamp=stamp.replace(':','_')
+        if only_agent:
+            suptitl =suptitl +'_'+agent.unique_id
         fig.savefig(self.dir+self.sname+suptitl+' '+stamp+'.png')   # save the figure to file
         plt.close(fig)
 
