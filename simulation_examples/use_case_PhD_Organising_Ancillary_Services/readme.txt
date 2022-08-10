@@ -4,4 +4,4 @@ The PhD calculations have been executed in 2019. Due to a long review process, t
 removed and the ASAM was published before the PhD Thesis.
 This means that recalculating the PhD use-case scenario’s with the latest version of ASAM will deliver different results. 
 
-Samuel Glismann 10-6-2022
+Samuel Glismann 10-8-2022
