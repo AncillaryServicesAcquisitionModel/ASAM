@@ -92,9 +92,6 @@ idir=r"C:\test_input_data\\"
 #result directory
 rdir=r"C:\test_results\\"
 
-idir=r"C:\Users\Otto\Documents\Doctor\python\RedispatchModel1.0_datacollector\test_input_data\\"
-#result directory
-rdir=r"C:\Users\Otto\Documents\Doctor\python\RedispatchModel1.0_datacollector\test_results\\"
 
 
 #Files names of test scenarios
