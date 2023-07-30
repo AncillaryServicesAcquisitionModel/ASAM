@@ -143,7 +143,7 @@ class Asset():
             #          it means that constraint_df allowed for 10 MW sell bids.
             #          no need to check if there was downward redispatch in previous rounds
             self.constraint_df['dispatch_limit'] = (self.constraint_df['previous_dispatch'
-                              ] + self.constraint_df['commit']).round(0).astype(int)
+                              ] + self.constraint_df['commit']).round(0).astype('int64')
 
 
             if (self.model.RD_marketoperator.rules['order_types'] == 'limit_block')|(

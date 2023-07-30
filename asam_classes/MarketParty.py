@@ -223,7 +223,7 @@ class MarketParty(Agent):
                     new_transactions[k] = new_transactions['due_amount']
                     new_transactions.set_index(['delivery_day','delivery_time'], inplace=True)
                     #sum (saldo) of trades from the agent per timestamp
-                    new_transactions = new_transactions.groupby(level =[0,1]).sum()
+                    new_transactions = new_transactions.groupby(level =[0,1]).sum(numeric_only=True)
                     #add to 'position' column in self.trade_schedule
                     new_trade_schedule[i] = new_trade_schedule[i].add(new_transactions[i], fill_value = 0)
                     #add to 'return' column in self.financial_return
@@ -285,7 +285,7 @@ class MarketParty(Agent):
 
                     RDM_asset_schedule.set_index(['delivery_day','delivery_time'], inplace = True)
                     RDM_asset_schedule.sort_index(level = 1, inplace = True)
-                    RDM_asset_schedule = RDM_asset_schedule.groupby(level =[0,1]).sum()
+                    RDM_asset_schedule = RDM_asset_schedule.groupby(level =[0,1]).sum(numeric_only=True)
                     RDM_asset_schedule.rename(columns = {'cleared_quantity': 'commit'}, inplace = True)
 
                     #place commitment in schedule horizon format
@@ -314,7 +314,6 @@ class MarketParty(Agent):
 
         #all assets id's of this agent
         all_ids = self.assets.index.values
-        must_run_commit= DataFrame()
         if self.unchanged_position == True:
             print('no additional portfolio optimization needed because nothing has changed for this agent')
             #add dispatch cost of current (thus realized) dispatch to bank account
@@ -345,6 +344,8 @@ class MarketParty(Agent):
             self.commit_model.loads_t.p_set['trade_position']=  commit_lst
             #calculate timestamp of last round
             day, MTU=   self.model.clock.calc_timestamp_by_steps(self.model.schedule.steps -1, 0)
+
+            must_run_commit= DataFrame(index=self.commit_model.snapshots, columns=self.commit_model.generators.index)
             #Assign time variant asset constraints in p.u. of pmax to each asset of agent
             for i in range(len(all_ids)):
                 asset = self.assets.loc[all_ids[i],:].item()
@@ -354,16 +355,15 @@ class MarketParty(Agent):
                     pmax_t = list(asset.constraint_df['p_max_t'].loc[self.model.schedules_horizon.index]/asset.pmax)
 
                     #Asset must-run contraints to be added to must_run_commit df (from upward redispatch),
-                    #for later use as extra cpontraint in PyPSA optimal power flow
+                    #for later use as extra constraint in PyPSA optimal power flow
                     if (asset.constraint_df['upward_commit']>0).any():
                         #constraint snapshots
-                        up_const = asset.constraint_df[['dispatch_limit', 'p_max_t']].loc[self.model.schedules_horizon.index].loc[
+                        up_const = asset.constraint_df[['dispatch_limit']].loc[self.model.schedules_horizon.index].loc[
                                         asset.constraint_df['upward_commit']!=0].reset_index()
-                        up_const['gen_name'] = asset.assetID
                         up_const ['strIndex']=up_const['delivery_day'].map(str)+str('_')+up_const['delivery_time'].map(str)
-                        #make an index from generatorname and snapshot for later use in pypsa constraint method
-                        up_const.set_index(['gen_name','strIndex'], inplace=True)
-                        must_run_commit = pd.concat([must_run_commit, up_const])
+                        up_const.set_index(up_const ['strIndex'], inplace=True)
+                        must_run_commit.loc[up_const.index, asset.assetID] = up_const['dispatch_limit'].values
+
                 else:
                     print(asset.assetID)
                     raise Exception ('there is a issue with the snapshot timestamps and asset constraints timestamps')
@@ -376,40 +376,47 @@ class MarketParty(Agent):
                 if asset.min_down_time > len(snap):
                     self.commit_model.generators.min_down_time[asset.assetID] = len(snap)
 
-                #ensure that the initial disaptch status taken from last dispatch (relevant for start stop costs)
+                #ensure that the initial dispatch status taken from last dispatch (relevant for start stop costs)
                 try:
                     last_dispatch = asset.schedule.loc[(day,MTU), 'commit']
                     if last_dispatch > 0:
-                        self.commit_model.generators.initial_status[asset.assetID]=1
+                        self.commit_model.generators.up_time_before[asset.assetID]= asset.min_up_time
                     else:
-                        self.commit_model.generators.initial_status[asset.assetID]=0
+                        self.commit_model.generators.up_time_before[asset.assetID]=0
                 except:
                     #in the first step there is no previous dispatch.
                     if not self.model.DA_marketoperator.test_init_dispatch.empty:
                         #test init dispatch
-                        self.commit_model.generators.initial_status[asset.assetID]=self.model.DA_marketoperator.test_init_dispatch[asset.assetID]
-                    else:
-                        #assume 1
-                        self.commit_model.generators.initial_status[asset.assetID]=1
+                        if self.model.DA_marketoperator.test_init_dispatch[asset.assetID] == 1.0:
+                            self.commit_model.generators.up_time_before[asset.assetID]= asset.min_up_time
+                        else:
+                            self.commit_model.generators.up_time_before[asset.assetID]= 0
 
-            def red_commit_constraint(network, snapshots):
-                """this method gives an extra must-run constraint to generators that have been
-                  commited to upward redispatch"""
-                if must_run_commit.empty:
-                    pass
-                else:
-                    gen_p_bounds = {(gen_sn) : (must_run_commit.loc[gen_sn,'dispatch_limit'],
-                                    must_run_commit.loc[gen_sn,'p_max_t'])
-                                    for gen_sn in must_run_commit.index.values}
-                    red_must_run={}
-                    for gen_sn in must_run_commit.index.values:
-                        red_must_run[gen_sn] = [[(1, network.model.generator_p[gen_sn])],"><", gen_p_bounds[gen_sn]]
-                    l_constraint(network.model, "must_run", red_must_run, list(must_run_commit.index.values))
+                    else:
+                        #assume generator is running
+                        self.commit_model.generators.up_time_before[asset.assetID]= asset.min_up_time
+            m = self.commit_model.optimize.create_model()
+            if must_run_commit.isna().all().all():
+                pass
+            else:
+                #add must-run constraint to generators that have been
+                 #commited to upward redispatch
+                 must_run_commit = must_run_commit.stack(dropna=False)
+                 must_run_commit.index.names=['snapshot', 'Generator']
+                 must_run_commit.loc[must_run_commit.isnull()] = -np.inf
+                 must_run_commit=must_run_commit.to_xarray()
+
+                 p = m.variables["Generator-p"]
+                 status = m.variables["Generator-status"]
+
+                 mask=must_run_commit != -np.inf
+                 con = p - status *must_run_commit >= 0
+                 m.add_constraints(con, name="Generator-must-run", mask=mask)
+
 
             #run linear optimal power flow
             try:
-                lopf_status= self.commit_model.lopf(self.commit_model.snapshots, extra_functionality = red_commit_constraint,
-                                       solver_name= self.model.exodata.solver_name, free_memory={'pypsa'})
+                self.commit_model.optimize.solve_model(solver_name= self.model.exodata.solver_name)
 
             except:
                 print(self.commit_model.generators_t.p_max_pu)
@@ -464,9 +471,9 @@ class MarketParty(Agent):
                 #starts=1, stops=-1
                 startstopcost=startstopcost - startstopcost.shift(1)
                 #take into account initial status
-                if (self.commit_model.generators.initial_status[j]==1)&(int(round(dispatch_cost[j].iloc[0]))==0):
+                if (self.commit_model.generators.up_time_before[j]>=1)&(int(round(dispatch_cost[j].iloc[0]))==0):
                     startstopcost.iloc[0] = -1
-                elif (self.commit_model.generators.initial_status[j]==0)&(int(round(dispatch_cost[j].iloc[0]))>0):
+                elif (self.commit_model.generators.up_time_before[j]==0)&(int(round(dispatch_cost[j].iloc[0]))>0):
                     startstopcost.iloc[0] = 1
                 else:
                     startstopcost.iloc[0] = 0
@@ -495,14 +502,15 @@ class MarketParty(Agent):
         for i in range(len(all_ids)):
             asset = self.assets.loc[all_ids[i],:].item()
             #enlarge asset schedule time index
-            mask =self.model.schedules_horizon.index.isin(asset.schedule.index)
-            asset.schedule = asset.schedule.append(self.model.schedules_horizon.loc[~mask,asset.schedule.columns])
+            asset.schedule = pd.concat([asset.schedule,DataFrame(index=self.model.schedules_horizon.index)],
+                                       axis = 1, join='outer', sort = True)
             if self.unchanged_position == False: #if unchanged == True this step is skipped
                 #add optimal dispatch results to asset schedule, without overwriting the past, i.e. realized dispatch
                 mask = asset.schedule.index.isin(opt_dispatch.index)
-                asset.schedule['commit'] = asset.schedule['commit'].where(~mask,opt_dispatch[asset.assetID].copy())
+                asset.schedule['commit'] = asset.schedule['commit'].where(
+                    ~mask,opt_dispatch[asset.assetID].copy())
                 #ensure that no very small values from the solver stay in results
-                asset.schedule['commit'] =asset.schedule['commit'].round(0).astype(int)
+                asset.schedule['commit'] =asset.schedule['commit'].round(0).astype('int64')
 
             #calculate available capacity based on constraint df temp pmax and pmin
             asset.schedule['p_max_t'].loc[self.model.schedules_horizon.index] = asset.constraint_df['p_max_t']
@@ -626,9 +634,9 @@ class MarketParty(Agent):
                        #'all_operational' includes all available capacity, excluding start stop.
                        #'all__plus_start_stop' means all available capacity.
                        qty_up_lst = list(a.schedule['available_up'].loc[
-                                    self.model.schedules_horizon.index].fillna(0).astype(int))
+                                    self.model.schedules_horizon.index].fillna(0).astype('int64'))
                        qty_down_lst = list(a.schedule['available_down'].loc[
-                                    self.model.schedules_horizon.index].fillna(0).astype(int))
+                                    self.model.schedules_horizon.index].fillna(0).astype('int64'))
                    elif self.strategy['RDM_quantity']=='not_offered_plus_startstop':
                        #' not_offered_plus start_stop' means that offered quantities on intra-day market is deducted.
                        #get the position from offered on IDM
@@ -638,24 +646,24 @@ class MarketParty(Agent):
                                     self.model.schedules_horizon.index].index.isin(sell_position.index).any():
                            qty_up_lst = a.schedule['available_up'].loc[
                                         self.model.schedules_horizon.index].fillna(0).to_frame().join(
-                                        -sell_position).sum(axis=1).astype(int).copy().values
+                                        -sell_position).sum(axis=1).astype('int64').copy().values
                            #correct negative values. Reason is a portfolio dispatch optimization after IDM clearing.
                            qty_up_lst[qty_up_lst < 0] = 0
                            qty_up_lst = list(qty_up_lst)
                        else:
                            #sell_position empty or outside schedule
                            qty_up_lst = list(a.schedule['available_up'].loc[
-                                    self.model.schedules_horizon.index].fillna(0).astype(int))
+                                    self.model.schedules_horizon.index].fillna(0).astype('int64'))
                        if a.schedule['available_down'].loc[
                                     self.model.schedules_horizon.index].index.isin(buy_position.index).any():
                            qty_down_lst = a.schedule['available_down'].loc[
                                             self.model.schedules_horizon.index].fillna(0).to_frame().join(
-                                            -buy_position).sum(axis=1).astype(int).copy().values
+                                            -buy_position).sum(axis=1).astype('int64').copy().values
                            qty_down_lst[qty_down_lst < 0] = 0
                            qty_down_lst = list(qty_down_lst)
                        else:
                            qty_down_lst = list(a.schedule['available_down'].loc[
-                                    self.model.schedules_horizon.index].fillna(0).astype(int))
+                                    self.model.schedules_horizon.index].fillna(0).astype('int64'))
 
                    else:
                        raise Exception('redispatch quantity strategy not known')
@@ -881,9 +889,9 @@ class MarketParty(Agent):
                     elif (self.strategy['IDM_quantity']=='all_operational')|(
                             self.strategy['IDM_quantity']=='all_plus_cond_startstop'):
                         qty_up_lst = list(a.schedule['available_up'].loc[
-                                    self.model.schedules_horizon.index].fillna(0).astype(int))
+                                    self.model.schedules_horizon.index].fillna(0).astype('int64'))
                         qty_down_lst = list(a.schedule['available_down'].loc[
-                                    self.model.schedules_horizon.index].fillna(0).astype(int))
+                                    self.model.schedules_horizon.index].fillna(0).astype('int64'))
                     else:
                         raise Exception('IDM quantity strategy not known')
                     if (self.strategy['IDM_quantity']=='random_plus_cond_startstop')|(
@@ -1031,7 +1039,7 @@ class MarketParty(Agent):
 
             #place intraday orders for the imbalance position of the agent (i.e. not from asset capacity)
             #this section is actually driven by the imbalance strategy of the agent.
-            if (self.trade_schedule['imbalance_position'].fillna(value=0).astype(int)!=0).any():
+            if (self.trade_schedule['imbalance_position'].fillna(value=0).astype('int64')!=0).any():
 
                 imb = DataFrame(columns=['imbalance_position','direction','price'])
                 imb['imbalance_position'] = self.trade_schedule['imbalance_position'].fillna(value=0)
@@ -1065,11 +1073,11 @@ class MarketParty(Agent):
                                 imb.loc[imb['imbalance_position']>0, ['imbalance_position','price']])
                         imb.loc[imb['imbalance_position']<0, 'imbalance_position']= self.small_random_quantity(
                                 imb.loc[imb['imbalance_position']<0, ['imbalance_position','price']].abs())
-                        qty_lst += list(imb['imbalance_position'].astype(int))
+                        qty_lst += list(imb['imbalance_position'].astype('int64'))
                     elif (self.strategy['IBM_quantity']=='all'):
                         #IBM quantity strategy 'all' assumes an impatient agent, who quickly trades all open positions
                         # make negative (short) positions positive buy quantity values
-                        imb['imbalance_position']= imb['imbalance_position'].abs().astype(int)
+                        imb['imbalance_position']= imb['imbalance_position'].abs().astype('int64')
                         qty_lst += list(imb['imbalance_position'])
 
                     elif (self.strategy['IBM_quantity']=='impatience_curve'):
@@ -1103,11 +1111,11 @@ class MarketParty(Agent):
                         imb_LO_vol['commit'] = imb_LO_vol['commit'].add(imb['LO_vol'], fill_value=0)
                         #Limit order quantity is reduced to small random strategy (to hide the total open position in the open orderbook)
                         imb_LO_vol['small_random_limit_order']=self.small_random_quantity(
-                                imb_LO_vol['commit'].abs().astype(int).to_frame())
-                        qty_down_lst =list(imb_LO_vol['small_random_limit_order'].abs().where(imb_LO_vol['commit'] < 0, 0).astype(int))
-                        qty_up_lst = list(imb_LO_vol['small_random_limit_order'].where(imb_LO_vol['commit'] > 0, 0).astype(int))
+                                imb_LO_vol['commit'].abs().astype('int64').to_frame())
+                        qty_down_lst =list(imb_LO_vol['small_random_limit_order'].abs().where(imb_LO_vol['commit'] < 0, 0).astype('int64'))
+                        qty_up_lst = list(imb_LO_vol['small_random_limit_order'].where(imb_LO_vol['commit'] > 0, 0).astype('int64'))
                         #add  to vol attribute lists (attention: market orders are added before limit orders to list)
-                        qty_lst += list(imb['MO_vol'].abs().astype(int)) + qty_down_lst[gate_closure_MTU:] + qty_up_lst[gate_closure_MTU:]
+                        qty_lst += list(imb['MO_vol'].abs().astype('int64')) + qty_down_lst[gate_closure_MTU:] + qty_up_lst[gate_closure_MTU:]
                     else:
                         raise Exception('imbalance quantity strategy not known')
 
@@ -1244,9 +1252,9 @@ class MarketParty(Agent):
 
                     #offers remaining ramp
                     qty_up_lst = [a.schedule.loc[(dayindex,timeindex),
-                                        'rem_ramp_constr_avail_up'].astype(int)]
+                                        'rem_ramp_constr_avail_up'].astype('int64')]
                     qty_down_lst = [a.schedule.loc[(dayindex,timeindex),
-                                        'rem_ramp_constr_avail_down'].astype(int)]
+                                        'rem_ramp_constr_avail_down'].astype('int64')]
                     price_up_lst = [int(a.srmc)]
                     price_down_lst = [int(a.srmc)]
 
@@ -1309,7 +1317,7 @@ class MarketParty(Agent):
         av_cap['rand_vol'] = int(0)
         #make small available quantity for the 'random quantity' to avoid unused capacity.
         av_cap['rand_vol'] = av_cap['rand_vol'].where(
-                av_cap['min_vol']<av_cap['max_vol'],av_cap.iloc[:,0].astype(int).values)
+                av_cap['min_vol']<av_cap['max_vol'],av_cap.iloc[:,0].astype('int64').values)
 
         for available, group in av_cap.loc[(av_cap['rand_vol'] == 0)&(
                 av_cap['max_vol'] - av_cap['min_vol'] >= 1)].groupby(
@@ -1604,7 +1612,7 @@ class MarketParty(Agent):
         df.loc[~mask, 'markup'] = df.loc[~mask,'markup'].round(0)
         #make np. nan to 0. these orders are filetered out anyway because no 0MW orders are allowed.
         df.loc[mask, 'markup'] = 0
-        df['markup']=df['markup'].round().astype(int).copy()
+        df['markup']=df['markup'].round().astype('int64').copy()
         if not unit_test:
             return(list(df['markup']))
         else:
@@ -2221,7 +2229,7 @@ class MarketParty(Agent):
             av_cap['markup']= - av_cap['markup']
 
         av_cap['markup'].fillna(value= 0, inplace=True)
-        av_cap['markup'] = av_cap['markup'].round().astype(int).copy()
+        av_cap['markup'] = av_cap['markup'].round().astype('int64').copy()
         markup_lst = list(av_cap['markup'])
 
         if not unit_test:
@@ -2329,7 +2337,7 @@ class MarketParty(Agent):
                         price_list.loc[(day,mtu)] = indiff_price[(day, mtu)] *(1 - profit_margin_pu)
                  else:
                     price_list.loc[(day,mtu)] = indiff_price[(day, mtu)] *(1 - profit_margin_pu)
-        price_list = price_list.round(0).astype(int).copy()
+        price_list = price_list.round(0).astype('int64').copy()
         return (list(price_list.values))
 
 

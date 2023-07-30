@@ -70,8 +70,8 @@ class GridSystemOperator():
         if self.model.exodata.sim_task['save_intermediate_results[y/n]']=='y':
             #enlarge system transactions timeframe to schedule time index
             for obook in self.model.rpt.all_books.keys():
-                csell = self.model.rpt.all_books[obook].cleared_sell_sum_quantity.sum()
-                cbuy =self.model.rpt.all_books[obook].cleared_buy_sum_quantity.sum()
+                csell = self.model.rpt.all_books[obook].cleared_sell_sum_quantity.sum(min_count=1)
+                cbuy =self.model.rpt.all_books[obook].cleared_buy_sum_quantity.sum(min_count=1)
                 all_trades[str(obook)+ '_sell' ] = csell
                 all_trades[str(obook)+ '_buy' ] = cbuy
                 if (obook =='DAM')|(str(obook) =='IDM'):
@@ -82,21 +82,22 @@ class GridSystemOperator():
         elif self.model.exodata.sim_task['save_intermediate_results[y/n]']=='n':
             for obook in self.model.rpt.all_books.keys():
                 sells= self.model.rpt.all_books[obook].cleared_sellorders_all_df.groupby(['delivery_day','delivery_time'])[
-                        'cleared_quantity'].sum().reset_index()
+                        'cleared_quantity'].sum(min_count=1).reset_index()
                 if sells.empty:
                     all_trades[str(obook)+ '_sell' ]= np.nan
                 else:
                     sells[['delivery_day','delivery_time']]=sells[['delivery_day','delivery_time']]
                     sells.set_index(['delivery_day','delivery_time'], inplace=True)
-                    all_trades[str(obook)+ '_sell' ]= sells.sort_index().round(0).astype(int).copy()
+                    all_trades[str(obook)+ '_sell' ]= sells.sort_index().round(0).astype('int64').copy()
 
-                buys = self.model.rpt.all_books[obook].cleared_buyorders_all_df.groupby(['delivery_day','delivery_time'])['cleared_quantity'].sum().reset_index()
+                buys = self.model.rpt.all_books[obook].cleared_buyorders_all_df.groupby(['delivery_day','delivery_time'])[
+                    'cleared_quantity'].sum(min_count=1).reset_index()
                 if buys.empty:
                     all_trades[str(obook)+ '_buy' ] =np.nan
                 else:
                     buys[['delivery_day','delivery_time']]=buys[['delivery_day','delivery_time']]
                     buys.set_index(['delivery_day','delivery_time'], inplace=True)
-                    all_trades[str(obook)+ '_buy' ] = buys.sort_index().round(0).astype(int).copy()
+                    all_trades[str(obook)+ '_buy' ] = buys.sort_index().round(0).astype('int64').copy()
 
                 if (obook =='DAM')|(str(obook) =='IDM'):
                     #store keys of commodity markets to check consistency
@@ -133,7 +134,7 @@ class GridSystemOperator():
                 #sell means market party sold, System Operator bought electricity. Buy means market party bought.
                 #System Operator can neither produce nor consume electricity.
                 #positive redispatch imbalance means System Operator has a long position (because System Operator bought more than it sold electricity)
-                new_imbalances[i] =  self.system_transactions['RDM_sell'].sub(self.system_transactions['RDM_buy'], fill_value=0)
+                new_imbalances[i] =  self.system_transactions['RDM_sell'].fillna(value=0).sub(self.system_transactions['RDM_buy'], fill_value=np.nan)
 
             elif i == 'imbalance_market(realized)':
                 #realized imbalance is only admistered for previous timestamp
@@ -174,7 +175,7 @@ class GridSystemOperator():
                 new_transactions[k] = new_transactions['due_amount']
                 new_transactions.set_index(['delivery_day','delivery_time'], inplace=True)
                 #sum (saldo) of trades from the agent per timestamp
-                new_transactions = new_transactions.groupby(level =[0,1]).sum()
+                new_transactions = new_transactions.groupby(level =[0,1]).sum(numeric_only=True)
                 #add to 'return' column in self.financial_return
                 new_returns[k] = new_returns[k].add(new_transactions[k], fill_value = 0)
 
@@ -183,9 +184,9 @@ class GridSystemOperator():
         #overwrite self.financial returns
         self.financial_return = new_returns.copy()
         #calculate net imbalance.
-        self.imbalances['sum_imbalances'] = self.imbalances[['imbalance_redispatch', 'imbalance_market(realized)','imbalance_market(scheduled)','imbalance_balancing']].sum(axis=1)
+        self.imbalances['sum_imbalances'] = self.imbalances[['imbalance_redispatch', 'imbalance_market(realized)','imbalance_market(scheduled)','imbalance_balancing']].sum(axis=1, min_count=1).fillna(value=np.nan)
         #calculate total return.
-        self.financial_return['total_return'] = self.financial_return[['RD_return','IB_return', 'BE_return']].sum(axis=1)
+        self.financial_return['total_return'] = self.financial_return[['RD_return','IB_return', 'BE_return']].sum(axis=1, min_count=1).fillna(value=np.nan)
 
 
 
@@ -296,8 +297,8 @@ class GridSystemOperator():
                 #pivot to get the areas as column names
                 shifted = shifted.unstack(level = 0)
                 #DF with booleans to check if more is procured than needed
-                over_proc = new_red_demand.abs().sub(shifted.abs(), fill_value = 0) < 0
-                remaining_demand = new_red_demand.sub(shifted, fill_value = 0)
+                over_proc = new_red_demand.abs().fillna(value=0).sub(shifted.abs(), fill_value = 0) < 0
+                remaining_demand = new_red_demand.fillna(value=0).sub(shifted, fill_value = 0)
                 #substract procured redispatch from red_demand and fill 0 if proc>demand
                 new_red_demand = remaining_demand.where(~over_proc, 0)
                 self.red_procured = self.red_procured.iloc[0:0]

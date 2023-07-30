@@ -48,7 +48,7 @@ class ExoData():
         self.output_path = simulation_parameters['output_path']
 
         try:
-            self.market_rules=simulation_parameters['market_rules']
+            self.market_rules=simulation_parameters['market_rules'].set_index('design_variable')
         except:
             raise Exception('market_rules not part of input parameters')
         try:
@@ -74,13 +74,10 @@ class ExoData():
                     self.sim_task['forecast_errors'] =='from_scenario'):
                 idx = pd.IndexSlice
                 #comes as multicolumn index. here it gets converted.
-                if pd.__version__ =='0.24.2':
-                    self.DA_residual_load =simulation_parameters['da_residual_load'].loc[
-                        :,idx[self.sim_task['residual_load_scenario'],:]]
 
-                elif pd.__version__ =='0.19.1':
-                    self.DA_residual_load =simulation_parameters['da_residual_load'].sort_index(axis=1).loc[
-                        :,idx[self.sim_task['residual_load_scenario'],:]]
+                self.DA_residual_load =simulation_parameters['da_residual_load'].loc[
+                    :,idx[self.sim_task['residual_load_scenario'],:]]
+
 
 
                 self.DA_residual_load.columns = self.DA_residual_load.columns.droplevel(0)
@@ -94,7 +91,7 @@ class ExoData():
                 mask = self.DA_residual_load.columns.isin(['residual_load_DA','FE_residual_load','congestion_MW',
                         'load_DA_cor','wind_DA', 'sun_DA'])
                 self.DA_residual_load.loc[:, mask] = self.DA_residual_load.loc[:,mask] * system_pmax
-                self.DA_residual_load.loc[:, mask] =self.DA_residual_load.loc[:, mask].round(0).astype(int)
+                self.DA_residual_load.loc[:, mask] =self.DA_residual_load.loc[:, mask].round(0).astype('int64')
 
         except:
             if self.market_rules.loc['acquisition_method','DAM']=='single_hourly_auction':

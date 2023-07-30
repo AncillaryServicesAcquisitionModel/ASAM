@@ -134,13 +134,14 @@ class Orderbook():
                 #this ensures that dtypes stay unchanged from OrderMessage dtypes.
                 self.buyorders=new_orders.loc[new_orders['direction']=='buy']
             else:
-                self.buyorders = self.buyorders.append(new_orders.loc[new_orders['direction']=='buy'],
-                                                       ignore_index =True)
+                self.buyorders = pd.concat([self.buyorders,new_orders.loc[new_orders['direction']=='buy']],
+                                                       ignore_index =True, axis=0)
+
             if self.sellorders.empty:
                 self.sellorders =new_orders.loc[new_orders['direction']=='sell']
             else:
-                self.sellorders = self.sellorders.append(new_orders.loc[new_orders['direction']=='sell'],
-                                                   ignore_index =True)
+                self.sellorders = pd.concat([self.sellorders, new_orders.loc[new_orders['direction']=='sell']],
+                                                   ignore_index =True, axis=0)
 
             if (new_orders['order_type']!='redispatch_demand').any():
                 #dublicate block orders to have the delivery times correctly represented in reporters
@@ -157,17 +158,27 @@ class Orderbook():
                                 blocks['delivery_duration'].iloc[i])
                         df['delivery_day'] = day_lst
                         df['delivery_time'] = mtu_lst
-                        new_orders = new_orders.append(df, ignore_index = True)
-                if self.buyorders_full_step.empty:
-                    self.buyorders_full_step=new_orders.loc[new_orders['direction']=='buy']
-                else:
-                    self.buyorders_full_step = self.buyorders_full_step.append(new_orders.loc[new_orders['direction']=='buy'],
-                                                       ignore_index =True)
-                if self.sellorders_full_step.empty:
-                     self.sellorders_full_step=new_orders.loc[new_orders['direction']=='sell']
-                else:
-                    self.sellorders_full_step = self.sellorders_full_step.append(new_orders.loc[new_orders['direction']=='sell'],
-                                               ignore_index =True)
+      #append                  new_orders = new_orders.append(df, ignore_index = True)
+                        new_orders = pd.concat([new_orders, df], axis=0, ignore_index = True)
+
+
+                self.buyorders_full_step = pd.concat([self.buyorders_full_step, new_orders.loc[new_orders['direction']=='buy']],
+                                                     axis =0, ignore_index=True)
+
+                self.sellorders_full_step = pd.concat([self.sellorders_full_step, new_orders.loc[new_orders['direction']=='sell']],
+                                                     axis =0, ignore_index=True)
+
+                ##depreciated 12/2/2023
+                # if self.buyorders_full_step.empty:
+                #     self.buyorders_full_step=new_orders.loc[new_orders['direction']=='buy']
+                # else:
+                #     self.buyorders_full_step = self.buyorders_full_step.append(new_orders.loc[new_orders['direction']=='buy'],
+                #                                        ignore_index =True)
+                # if self.sellorders_full_step.empty:
+                #      self.sellorders_full_step=new_orders.loc[new_orders['direction']=='sell']
+                # else:
+                #     self.sellorders_full_step = self.sellorders_full_step.append(new_orders.loc[new_orders['direction']=='sell'],
+                #                                ignore_index =True)
             else:
                 self.redispatch_demand_orders_downward = new_orders.loc[new_orders['direction']=='buy'].copy()
                 self.redispatch_demand_orders_upward =  new_orders.loc[new_orders['direction']=='sell'].copy()

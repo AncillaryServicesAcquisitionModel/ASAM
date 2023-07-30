@@ -99,8 +99,8 @@ class Visualizations():
             agent = self.model.MP_dict[only_agent]
             #only one agent is plotted
             all_scheds[agent.unique_id]=agent.trade_schedule.copy()/1000
-            ymin_ag += [min(agent.trade_schedule.min().min()/1000, 0)]
-            ymax_ag += [max(agent.trade_schedule.max().max()/1000, 0)]
+            ymin_ag += [min(agent.trade_schedule.min()/1000, 0)]
+            ymax_ag += [max(agent.trade_schedule.max()/1000, 0)]
 
         ymin = min(ymin_ag)
         ymax = max(ymax_ag)
@@ -445,9 +445,9 @@ class Visualizations():
         #for simple plotting (only one legend sell and buy)
         df[shown_labels]=df[sell_labels]
 
-        ymin=min(df[sell_labels].sum(axis=1).min().min(),df['sum_dispatch'].min().min(), ymin)
+        ymin=min(df[sell_labels].sum(axis=1).min(),df['sum_dispatch'].min(), ymin)
 
-        ymax=max(df[buy_labels].sum(axis=1).max().max(),df['sum_dispatch'].max().max(), ymax)
+        ymax=max(df[buy_labels].sum(axis=1).max(),df['sum_dispatch'].max(), ymax)
 
         if (ymax>0)|(ymax<0):
                     ymax=int(ymax + 0.1*abs(ymax))
@@ -707,9 +707,10 @@ class Visualizations():
             plt.suptitle('Redispatch Key Performance Indicators')
         key_figures_df = self.model.rpt.redispatch_PI().sum()
         indis =['redispatch_demand', 'redispatch_solved','overproc_downwards', 'underproc_downwards',
-               'overproc_upwards', 'underproc_upwards','imbalance_redispatch', 'imbalance_market']
-        ymax =key_figures_df.loc[indis].max().max()/1000
-        ymin =key_figures_df.loc[indis].min().min()/1000
+               'overproc_upwards', 'underproc_upwards','imbalance_redispatch']
+
+        ymax =key_figures_df.loc[indis].max()/1000
+        ymin =key_figures_df.loc[indis].min()/1000
         if (ymin <0)&(ymin >=-1):
             ymin = -1
 
@@ -803,7 +804,7 @@ class Visualizations():
         if header==True:
             plt.suptitle(suptitl)
 
-        ymax=keyfigures.loc[costs, 'value'].abs().max().max()
+        ymax=keyfigures.loc[costs, 'value'].abs().max()
         ymin = 0
         offset = max(abs(ymin)*0.05, abs(ymax)*0.05)
 

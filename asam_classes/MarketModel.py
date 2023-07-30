@@ -97,14 +97,14 @@ class MarketModel(Model):
             lst_assets =[]
             for k in range(len(df)):
                 newasset = Asset(self, assetowner = i, assetname= str(df.loc[k,'asset_name']),
-                                 pmax = df.loc[k,'pmax'].astype(int), pmin = df.loc[k,'pmin'].astype(int),
-                                 location = df.loc[k,'location'], srmc = df.loc[k,'srmc'].astype(int),
+                                 pmax = df.loc[k,'pmax'].astype('int64'), pmin = df.loc[k,'pmin'].astype('int64'),
+                                 location = df.loc[k,'location'], srmc = df.loc[k,'srmc'].astype('int64'),
                                  ramp_limit_up = df.loc[k,'ramp_limit_up'],
                                  ramp_limit_down = df.loc[k,'ramp_limit_down'],
                                  min_up_time = df.loc[k,'min_up_time'],
                                  min_down_time = df.loc[k,'min_down_time'],
-                                 start_up_cost = df.loc[k,'start_up_cost'].astype(int),
-                                 shut_down_cost = df.loc[k,'shut_down_cost'].astype(int),
+                                 start_up_cost = df.loc[k,'start_up_cost'].astype('int64'),
+                                 shut_down_cost = df.loc[k,'shut_down_cost'].astype('int64'),
                                  ramp_limit_start_up = df.loc[k,'ramp_limit_start_up'],
                                  ramp_limit_shut_down = df.loc[k,'ramp_limit_shut_down'])
                 lst_assets.append([str(df.loc[k,'asset_name']), newasset])

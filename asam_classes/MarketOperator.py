@@ -219,19 +219,21 @@ class MO_intraday(MarketOperator):
                             blocks['delivery_duration'].iloc[i])
                     df['delivery_day'] = day_lst
                     df['delivery_time'] = mtu_lst
-                    invoice = invoice.append(df, ignore_index = True)
+                    invoice = pd.concat([invoice, df], axis=0, ignore_index=True)
             print('setteling matched intraday trades')
             #report to cleared orderbook
-            self.obook.cleared_sellorders = self.obook.cleared_sellorders.append(invoice.loc[invoice['direction']== 'sell'])
-            self.obook.cleared_buyorders = self.obook.cleared_buyorders.append(invoice.loc[invoice['direction']== 'buy'])
+            self.obook.cleared_sellorders = pd.concat([self.obook.cleared_sellorders, invoice.loc[invoice['direction']== 'sell']], axis=0)
+            self.obook.cleared_buyorders =  pd.concat([self.obook.cleared_buyorders, invoice.loc[invoice['direction']== 'buy']], axis=0)
+
             #calculate money sum due (devide by 4 as very product is 15 minutes= 1 MTU and prices are EUR/MWh)
             invoice['due_amount']= invoice['cleared_quantity'] * invoice['cleared_price']/4
             #make buy due amounts negative
             invoice['due_amount']= invoice['due_amount'].where(invoice['direction']=='sell',-1*invoice['due_amount'])
             for agent in self.model.schedule.agents:
-                agent.accepted_ID_orders = agent.accepted_ID_orders.append(invoice.loc[invoice['agent_id'] == agent.unique_id])
-                transactions = invoice['due_amount'].loc[invoice['agent_id'] == agent.unique_id].sum()
-                agent.money += transactions
+                agent.accepted_ID_orders =  pd.concat([agent.accepted_ID_orders, invoice.loc[invoice['agent_id'] == agent.unique_id]], axis=0)
+                #add sum of transactions to agent.money report
+                agent.money  += invoice['due_amount'].loc[invoice['agent_id'] == agent.unique_id].sum(numeric_only=True)
+
 
 class MO_redispatch(MarketOperator):
     def __init__(self, model, orderbook, market_rules):
@@ -310,7 +312,7 @@ class MO_redispatch(MarketOperator):
                    p_nom=0)
         if self.rules.loc['acquisition_method']=='cont_RDM_thinf':
             # there is no constraint regarding the quantity equilibrium of upward and downward redispatch actions per MTU
-            self.imb_threshold = np.inf
+            self.imb_threshold = None
         elif self.rules.loc['acquisition_method']=='cont_RDM_th0':
             # there is constraint regarding the quantity equilibrium of upward and downward redispatch actions per MTU
             self.imb_threshold = 0
@@ -334,76 +336,6 @@ class MO_redispatch(MarketOperator):
             #taking a copy of the pypsa model for redispatch ensures that no previous orders are included
             commit_model = self.commit_model.copy()
 
-            def redispatch_solution_constraints(network, snapshots):
-                #this local method has two local constraint methods for pypsa opf
-                def block_constraint(network, snapshots):
-                    """Block orders have p_max_pu = 0 for all periods outside their block.
-                    the snapshots within the block have p_max_pu = order quantity.
-                    This block however should be dispatched with constant quantity within this block.
-                    Therefore, a set of constraints is given to the solver where
-                    gen_p_t1 ==gen_p_t-1, gen_p_t2 ==gen_p_t1 ...see PyPSA github
-                    for more information on structure of additional constraints.
-
-                    Unfortunately, this way of adding contraints works only for PyPSA 0.13.1 or older.
-                    To-do: translate this method to new PyPSA versions. Help needed.
-                    """
-                    #get all snapshots of the block (p_max!=0)
-                    block_sn={}
-                    for gen in network.generators.index:
-                       try:
-                           block_sn[gen] = network.generators_t.p_max_pu.loc[network.generators_t.p_max_pu[gen] !=0].index
-                       except:
-                           block_sn[gen] = None
-                    constant_block ={}
-                    for gens_i, gen in enumerate(network.generators.index):
-
-                        if block_sn[gen] is not None:
-                            affected_sns =  block_sn[gen]
-                            affected_sns_shifted =[affected_sns[-1]] + list(affected_sns[:-1])
-                            for i in range(len(affected_sns)):
-                                lhs = LExpression([(1,network.model.generator_p[gen, affected_sns[i]])])
-                                rhs = LExpression([(1,network.model.generator_p[gen, affected_sns_shifted[i]])])
-                                constant_block[gen, affected_sns[i]]= LConstraint(lhs,"==",rhs)
-
-                    affected_generators = [k for k, v in block_sn.items() if v is not None]
-                    gen_sns_index =[]
-                    for gen in affected_generators:
-                        for sn in block_sn[gen]:
-                            gen_sns_index +=[(gen, sn)]
-                    #dictionary of LContraints is given to pypsa.opt.l_constraint (set)
-                    l_constraint(network.model, "block_constraint", constant_block,
-                                  gen_sns_index )
-                def balance_threshold (network, snapshots):
-                    #all orders up and down need to be selected
-                    gen_up = list(network.generators.loc[network.generators.index.isin(
-                            list(upsupply['order_id']))].index)
-                    gen_down = list(network.generators.loc[network.generators.index.isin(
-                            list(downsupply['order_id']))].index)
-                    #solver needs at least one variable. Therefore these 0MW placeholders are used,
-                    #in case there are no orders in a direction
-                    if not gen_up:
-                       gen_up =['placeholder_gen_up']
-                    if not gen_down:
-                       gen_down =['placeholder_gen_down']
-
-                    imb_upper={}
-                    imb_lower={}
-                    for sn in snapshots:
-                        rhs = LExpression([(1,sum(network.model.generator_p[gen,sn] for gen in gen_up))]) +  self.imb_threshold
-                        lhs =  LExpression([(1,sum(network.model.generator_p[gen,sn] for gen in gen_down))])
-                        imb_upper[sn]= LConstraint(lhs,"<=",rhs)
-
-                        lhs = LExpression([(1,sum(network.model.generator_p[gen,sn] for gen in gen_up))])
-                        rhs =  LExpression([(1,sum(network.model.generator_p[gen,sn] for gen in gen_down))]) +  self.imb_threshold
-                        imb_lower[sn]= LConstraint(lhs,"<=",rhs)
-                    l_constraint(network.model, "imbalance_constraint_upper", imb_upper, list(snapshots))
-                    l_constraint(network.model, "imbalance_constraint_lower", imb_lower, list(snapshots))
-                #execute both constraint methods
-                if (self.rules['order_types']== 'limit_ISP')|(
-                    self.rules['order_types']== 'limit_block')|(
-                           self.rules['order_types']== 'IDCONS_orders'):
-                    block_constraint(network, snapshots)
-                balance_threshold (network, snapshots)
 
             #set the minimum order clearing
             if (self.rules['order_types']== 'all_or_none_ISP')|(
@@ -531,9 +463,67 @@ class MO_redispatch(MarketOperator):
             for area in updemand_per_area.columns:
                 commit_model.loads_t.p_set['up_demand_'+ area] = list(updemand_per_area[area])
             commit_model.loads_t.p_set.fillna(value=0, inplace=True)
-            #run PyPSA
-            commit_model.lopf(commit_model.snapshots, solver_name= self.model.exodata.solver_name,
-                                  extra_functionality = redispatch_solution_constraints, free_memory={'pypsa'})
+
+            redispatch_demand_snapshots= commit_model.loads_t.p_set[commit_model.loads_t.p_set.iloc[:,0]>0].index
+            #needed to add constraints
+            m = commit_model.optimize.create_model()
+
+            #add equilibrium constraint to model
+            """The balance threshold ensures that the difference between the sum of upward and downward redispatch
+            remains within self.imb_threshold. By that a redispatch-caused imbalance is mitigated"""
+
+            if isinstance(self.imb_threshold, (float,int)): # doesn't work with infinity
+
+                #all orders up and down need to be selected
+                gen_up = list(commit_model.generators.loc[commit_model.generators.index.isin(
+                        list(upsupply['order_id']))].index)
+                gen_down = list(commit_model.generators.loc[commit_model.generators.index.isin(
+                        list(downsupply['order_id']))].index)
+                #solver needs at least one variable. Therefore these 0MW placeholders are used,
+                #in case there are no orders in a direction
+                if not gen_up:
+                   gen_up =['placeholder_gen_up']
+                if not gen_down:
+                   gen_down =['placeholder_gen_down']
+                for sn in redispatch_demand_snapshots:
+                    var_gen_up =m.variables["Generator-p"].loc[sn,gen_up ]
+                    var_gen_down =m.variables["Generator-p"].loc[sn,gen_down]
+                    m.add_constraints(var_gen_up .sum() - var_gen_down.sum()<=self.imb_threshold, name = 'balance_up'+sn)
+                    m.add_constraints(var_gen_down.sum() - var_gen_up.sum()<=self.imb_threshold, name = 'balance_down'+sn)
+
+
+            #add constraints block contraints to model
+            if (self.rules['order_types']== 'limit_ISP')|(
+                self.rules['order_types']== 'limit_block')|(
+                       self.rules['order_types']== 'IDCONS_orders'):
+                """Block orders have p_max_pu = 0 for all periods outside their block.
+                the snapshots within the block have p_max_pu = order quantity.
+                This block however should be dispatched with constant quantity within this block.
+                Therefore, a set of constraints is given to the solver where
+                gen_p_t1 ==gen_p_t-1, gen_p_t2 ==gen_p_t1 ...see PyPSA github
+                for more information on structure of additional constraints.
+                """
+                #get all snapshots of the block (p_max!=0)
+                block_sn={}
+                for gen in commit_model.generators.index:
+                   try:
+                       block_sn[gen] = commit_model.generators_t.p_max_pu.loc[commit_model.generators_t.p_max_pu[gen] !=0].index
+                   except:
+                       block_sn[gen] = None
+                for gens_i, gen in enumerate(commit_model.generators.index):
+                    if block_sn[gen] is not None and len(block_sn[gen]) > 1:
+                        affected_sns =  block_sn[gen]
+                        affected_sns_shifted =[affected_sns[-1]] + list(affected_sns[:-1])
+                        for i in range(len(affected_sns)):
+                            var_block_sns = m.variables["Generator-p"].loc[affected_sns[i],gen]
+                            var_block_sns_shifted = m.variables["Generator-p"].loc[affected_sns_shifted[i],gen]
+                            m.add_constraints(var_block_sns - var_block_sns_shifted == 0, name = 'block_'+gen+'_'+affected_sns[i])
+
+
+            #calculate redispatch with PyPSA linopy
+            commit_model.optimize.solve_model(solver_name= self.model.exodata.solver_name)
+
+
             generators = commit_model.generators_t.p
             generators = generators.loc[:,(generators>0).any(axis=0)].copy()
             #get cleared quantity per order. Mean instead of sum, because of possible block orders
@@ -597,8 +587,8 @@ class MO_redispatch(MarketOperator):
                     invoice = invoice.append(df, ignore_index = True)
 
             #report to cleared orderbook
-            self.obook.cleared_sellorders = self.obook.cleared_sellorders.append(invoice.loc[invoice['direction']== 'sell'])
-            self.obook.cleared_buyorders = self.obook.cleared_buyorders.append(invoice.loc[invoice['direction']== 'buy'])
+            self.obook.cleared_sellorders = pd.concat([self.obook.cleared_sellorders,invoice.loc[invoice['direction']== 'sell']], axis=0)
+            self.obook.cleared_buyorders = pd.concat([self.obook.cleared_buyorders,invoice.loc[invoice['direction']== 'buy']], axis=0)
             if self.rules['pricing_method']== 'pay_as_bid':
                 invoice['due_amount']= invoice['cleared_quantity'] * invoice['cleared_price']/4
                 #make buy due amounts negative
@@ -723,7 +713,7 @@ class MO_dayahead(MarketOperator):
                         self.commit_model.generators_t.p_min_pu[asset.assetID] = unav_h.loc[indx,'p_min_t'].values.copy()
 
 
-
+            m = self.commit_model.optimize.create_model()
             #daytime of last dispatch for initial generator status determination
             if not self.model.schedule.steps == 0:
                 try:
@@ -735,9 +725,7 @@ class MO_dayahead(MarketOperator):
                 # a test run is needed to determine initial dispatch
                 init_time= None
                 try:
-                    #default is status 1 for start
-                    self.commit_model.generators.initial_status = 1
-                    self.commit_model.lopf(self.commit_model.snapshots, solver_name= self.model.exodata.solver_name, free_memory={'pypsa'})
+                    self.commit_model.optimize.solve_model(solver_name= self.model.exodata.solver_name)
                     self.test_init_dispatch = self.commit_model.generators_t.p.copy().iloc[0]
                     self.test_init_dispatch.loc[self.test_init_dispatch > 0] = 1
                     self.test_init_dispatch.loc[self.test_init_dispatch == 0] = 0
@@ -752,14 +740,16 @@ class MO_dayahead(MarketOperator):
                     if init_time:
                         last_dispatch = asset.schedule.loc[init_time, 'commit']
                         if last_dispatch > 0:
-                            self.commit_model.generators.initial_status[asset.assetID] = 1
+                            self.commit_model.generators.up_time_before[asset.assetID] = asset.min_up_time
                         else:
-                            self.commit_model.generators.initial_status[asset.assetID] = 0
+                            self.commit_model.generators.up_time_before[asset.assetID] = 0
                     else:
-                        self.commit_model.generators.initial_status[asset.assetID]= self.test_init_dispatch[asset.assetID]
-
+                        if self.test_init_dispatch[asset.assetID] == 1.0:
+                            self.commit_model.generators.up_time_before[asset.assetID]= asset.min_up_time
+                        else:
+                            self.commit_model.generators.up_time_before[asset.assetID]= 0
             try:
-                self.commit_model.lopf(self.commit_model.snapshots, solver_name= self.model.exodata.solver_name, free_memory={'pypsa'})
+                self.commit_model.optimize.solve_model(solver_name= self.model.exodata.solver_name)
             except:
                 import pdb
                 pdb.set_trace()
@@ -854,18 +844,20 @@ class MO_dayahead(MarketOperator):
                             #divide cleared order quantity by 4 to cop with the split from hour to mtu
                             DA_cl_orders['cleared_quantity'] = matches[i]
                             DA_cl_orders['cleared_price']= matches['cleared_price']
+
                             #right order format. missing columsn are nan. which is not an issue.
-                            DA_cl_orders = DA_cl_orders.loc[:,['agent_id','associated_asset',
+                            DA_cl_orders = DA_cl_orders.reindex(columns=['agent_id','associated_asset',
                                                                'delivery_location','cleared_quantity',
                                                                'cleared_price', 'delivery_day','delivery_time',
-                                                               'order_type','init_time', 'order_id', 'direction', 'delivery_duration']]
+                                                               'order_type','init_time', 'order_id', 'direction', 'delivery_duration'])
                             #cleared price divided by 4 because its a price per MWh and we split the hours to 15 minutes mtu
                             DA_cl_orders['due_amount']= DA_cl_orders['cleared_quantity'] * DA_cl_orders['cleared_price']/4
                             agent.money += DA_cl_orders['due_amount'].sum()
                             agent.accepted_DA_orders = pd.concat([agent.accepted_DA_orders,
                                                                   DA_cl_orders])
                             #add orders to reporter
-                            self.obook.cleared_sellorders = self.obook.cleared_sellorders.append(DA_cl_orders)
+                            self.obook.cleared_sellorders = pd.concat([self.obook.cleared_sellorders,DA_cl_orders], axis=0)
+
                             #also add the orders to the artificial sellorderbook
                             DA_cl_orders = DA_cl_orders.drop(['cleared_quantity','cleared_price', 'due_amount'], axis=1).copy()
                         DA_cl_orders['quantity']= agent.assets.loc[i].item().pmax
@@ -875,7 +867,7 @@ class MO_dayahead(MarketOperator):
                                                            'price', 'delivery_day','delivery_time',
                                                            'order_type','init_time', 'order_id', 'direction', 'delivery_duration']]
                         #add orders to reporter
-                        self.obook.sellorders_full_step = self.obook.sellorders_full_step.append(DA_cl_orders)
+                        self.obook.sellorders_full_step = pd.concat([self.obook.sellorders_full_step, DA_cl_orders], axis=0)
 
 
                 #administration of 'Central_DA_residual_load_entity' for DA buy orders
@@ -889,24 +881,28 @@ class MO_dayahead(MarketOperator):
                 DA_cl_orders['order_type'] = 'limit order'
 
                 #right order format. Missing columns are nan, which is not an issue.
-                DA_cl_orders = DA_cl_orders.loc[:,['agent_id','associated_asset','delivery_location','cleared_quantity','cleared_price', 'delivery_day','delivery_time','order_type','init_time', 'order_id', 'direction']]
+                DA_cl_orders = DA_cl_orders.reindex(columns=['agent_id','associated_asset','delivery_location',
+                                                             'cleared_quantity','cleared_price', 'delivery_day',
+                                                             'delivery_time','order_type','init_time', 'order_id',
+                                                             'direction'])
                 #cleared price divided by 4 because its a price per MWh and we split the hours to 15 minutes mtu
                 DA_cl_orders['due_amount']= - DA_cl_orders['cleared_quantity'] * DA_cl_orders['cleared_price']/4
                 #add orders to reporter
 
-                self.obook.cleared_buyorders = self.obook.cleared_buyorders.append(DA_cl_orders)
+                self.obook.cleared_buyorders = pd.concat([self.obook.cleared_buyorders,DA_cl_orders], axis=0)
 
                 DA_cl_orders = DA_cl_orders.drop(['cleared_quantity','cleared_price', 'due_amount'], axis=1).copy()
                 DA_cl_orders['quantity']= matches['DA_residual_load']
                 DA_cl_orders['price']= np.nan
-                DA_cl_orders = DA_cl_orders.loc[:,['agent_id','associated_asset',
+                DA_cl_orders = DA_cl_orders.reindex(columns= ['agent_id','associated_asset',
                                                            'delivery_location','quantity',
                                                            'price', 'delivery_day','delivery_time',
-                                                           'order_type','init_time', 'order_id', 'direction', 'delivery_duration']]
+                                                           'order_type','init_time', 'order_id', 'direction',
+                                                           'delivery_duration'])
 
 
                 #add orders to reporter
-                self.obook.buyorders_full_step = self.obook.buyorders_full_step.append(DA_cl_orders)
+                self.obook.buyorders_full_step = pd.concat([self.obook.buyorders_full_step, DA_cl_orders], axis=0)
                 self.obook.buyorders_full_step[['delivery_day', 'delivery_time','quantity']] = self.obook.buyorders_full_step[['delivery_day', 'delivery_time','quantity']].astype('int64')
             else:
                 #no DA auction in this round

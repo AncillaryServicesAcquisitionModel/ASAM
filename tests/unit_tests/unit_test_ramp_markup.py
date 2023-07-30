@@ -201,14 +201,13 @@ def ramping_markup(direction='upward', of_quantity = None, asset = None, unit_te
 
 def read_input_data(path,filename):
 
-    simulation_parameters = pd.read_excel(os.path.join(path,filename), sheetname=None)
-    simulation_parameters['asset_input'] = pd.read_excel(os.path.join(path,filename), sheetname='asset_input', index_col=0).squeeze()
+    simulation_parameters = pd.read_excel(os.path.join(path,filename), sheet_name=None)
+    simulation_parameters['asset_input'] = pd.read_excel(os.path.join(path,filename), sheet_name='asset_input', index_col=0).squeeze()
     return (simulation_parameters)
 
 
 #input directory
 idir=r"C:\unit_tests"
-idir=r"C:\Users\Otto\Documents\Doctor\python\RedispatchModel1.0_datacollector\unit_tests"
 
 #Files names of test scenarios
 inames = ['unit_test_ramp_markup_upwards.xlsx',

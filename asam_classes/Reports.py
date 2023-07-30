@@ -17,12 +17,9 @@ class Reports():
         self.model = model
         #all_books dict is used to capture market statistics
         self.all_books ={}
+
         try:
-            self.all_books['RDM']=self.model.red_obook
-        except AttributeError:
-            pass
-        try:
-            self.all_books['IDM']=self.model.IDM_obook
+            self.all_books['BEM']=self.model.BEM_obook
         except AttributeError:
             pass
         try:
@@ -30,9 +27,17 @@ class Reports():
         except AttributeError:
             pass
         try:
-            self.all_books['BEM']=self.model.BEM_obook
+            self.all_books['IDM']=self.model.IDM_obook
         except AttributeError:
             pass
+        try:
+            self.all_books['RDM']=self.model.red_obook
+        except AttributeError:
+            pass
+
+
+
+
 
         #here it is possible to add simple reports in MESA style
         self.table_reporters = {}
@@ -85,10 +90,10 @@ class Reports():
     def publish_RDM_wm_prices(self):
         #make weighted averages over all simulation steps
         qty_red_up=self.model.red_obook.cleared_sell_sum_quantity
-        wm_red_up=(self.model.red_obook.cleared_sell_wm_price * qty_red_up/(qty_red_up.sum().T)).sum()
+        wm_red_up=(self.model.red_obook.cleared_sell_wm_price * qty_red_up/(qty_red_up.sum(min_count=1))).sum(min_count=1).fillna(value=np.nan)
 
         qty_red_down=self.model.red_obook.cleared_buy_sum_quantity
-        wm_red_down=(self.model.red_obook.cleared_buy_wm_price * qty_red_down/(qty_red_down.sum().T)).sum()
+        wm_red_down=(self.model.red_obook.cleared_buy_wm_price * qty_red_down/(qty_red_down.sum(min_count=1))).sum(min_count=1).fillna(value=np.nan)
         #Attention, it should be mentioned explicitly that in case one value is missing a 0 is assumed.
         wm_red_spread =wm_red_up.sub(wm_red_down, fill_value=0)
 
@@ -99,7 +104,7 @@ class Reports():
     def publish_IDM_wm_prices(self):
         #make weighted averages over all simulation steps
         qty_IDM = self.model.IDM_obook.cleared_sell_sum_quantity
-        wm_IDM=(self.model.IDM_obook.cleared_sell_wm_price * qty_IDM/(qty_IDM.sum().T)).sum()
+        wm_IDM=(self.model.IDM_obook.cleared_sell_wm_price * qty_IDM/(qty_IDM.sum(min_count=1))).sum(min_count=1).fillna(value=np.nan)
         self.prices['IDM_weighted_mean'] = wm_IDM
 
     def get_cleared_prices(self):
@@ -405,16 +410,16 @@ class Reports():
         except:
             import pdb
             pdb.set_trace()
-        f = {quantity_type: ['sum'],price_type:{'weighted_mean' : wm,
-             'mean': np.mean, 'max': np.max, 'min': np.min} }
-        result =grouped.agg(f)
+
+        f = {quantity_type: 'sum', price_type:[wm, 'mean', 'max','min']}
+        result =grouped.agg(f).rename(columns={'<lambda_0>':'weighted_mean'})
 
         if changed_price == True:
             #make price results np.nan again, but hold dataframe format
             result[price_type]=np.nan
 
         result= result.reset_index()
-        result[['delivery_day','delivery_time']]=result[['delivery_day','delivery_time']].astype(int)
+        result[['delivery_day','delivery_time']]=result[['delivery_day','delivery_time']].astype('int64')
         result.set_index(group_lst, inplace=True)
         result.sort_index(inplace = True)
         return(result)
@@ -537,7 +542,7 @@ class Reports():
         r_pi['overproc_upwards'] = r_pi['residual_demand_upwards'].where(r_pi['residual_demand_upwards']>0,np.nan)
         r_pi['underproc_upwards'] = -r_pi['residual_demand_upwards'].where(r_pi['residual_demand_upwards']<0,np.nan)
         r_pi['redispatch_solved'] =pd.concat([r_pi['redispatch_demand'].fillna(value=0).where(r_pi['RDM_buy']>=r_pi['redispatch_demand'].fillna(value=0), r_pi['RDM_buy']
-            ), r_pi['redispatch_demand'].fillna(value=0).where(r_pi['RDM_sell']>=r_pi['redispatch_demand'].fillna(value=0), r_pi['RDM_sell'])], axis=1).sum(axis=1)/2
+            ), r_pi['redispatch_demand'].fillna(value=0).where(r_pi['RDM_sell']>=r_pi['redispatch_demand'].fillna(value=0), r_pi['RDM_sell'])], axis=1).sum(axis=1, min_count=1)/2
         """to be added when needed"""
         #sum overprocurement and underprocument relative to redisaptch demand, load, peak,load
         return(r_pi)
@@ -549,10 +554,15 @@ class Reports():
             return (None)
         else:
             #quantity mean supply/demand ratio per offer time
-            demand_up =self.model.red_obook.redispatch_demand_upward_all_df.groupby(by=['delivery_day','delivery_time','delivery_location','offer_daytime']).sum()['quantity']
-            demand_down =self.model.red_obook.redispatch_demand_downward_all_df.groupby(by=['delivery_day','delivery_time','delivery_location','offer_daytime']).sum()['quantity']
-            supply_up =self.model.red_obook.sellorders_all_df.groupby(by=['delivery_day','delivery_time','delivery_location','offer_daytime']).sum()['quantity']
-            supply_down =self.model.red_obook.buyorders_all_df.groupby(by=['delivery_day','delivery_time','delivery_location','offer_daytime']).sum()['quantity']
+            demand_up =self.model.red_obook.redispatch_demand_upward_all_df.groupby(by=[
+                'delivery_day','delivery_time','delivery_location','offer_daytime']).sum(numeric_only=False)['quantity']
+            demand_down =self.model.red_obook.redispatch_demand_downward_all_df.groupby(
+                by=['delivery_day','delivery_time','delivery_location','offer_daytime']).sum(numeric_only=False)['quantity']
+
+            supply_up =self.model.red_obook.sellorders_all_df.groupby(by=[
+                'delivery_day','delivery_time','delivery_location','offer_daytime']).sum(numeric_only=False)['quantity']
+            supply_down =self.model.red_obook.buyorders_all_df.groupby(by=[
+                'delivery_day','delivery_time','delivery_location','offer_daytime']).sum(numeric_only=False)['quantity']
 
             #remove redispatch demand for past delivery times
             demand_up= demand_up.where(demand_up.reset_index().set_index(
@@ -568,7 +578,7 @@ class Reports():
             #calculate ratio
             demand_up['s_d_ratio'] =demand_up['quantity_supply'].fillna(value=0).values/demand_up['quantity_demand'].values
             demand_down['s_d_ratio'] =demand_down['quantity_supply'].fillna(value=0).values/demand_down['quantity_demand'].values
-            r_pi=Series()
+            r_pi=Series(dtype='float64')
             #make mean values
             r_pi['av_s_d_ratio_up'] = demand_up['s_d_ratio'].mean()
             r_pi['av_s_d_ratio_down'] = demand_down['s_d_ratio'].mean()
@@ -599,19 +609,19 @@ class Reports():
             if not self.all_books[obook].buyorders_all_df.empty:
                 qty_buy= self.all_books[obook].buyorders_all_df.groupby(by=['delivery_day', 'delivery_time','offer_daytime'])['quantity'].sum()
                 indicators.loc[obook, 'qty_av_av_buy'] = (qty_buy.unstack(level=[0,1])).mean().mean()
-                indicators.loc[obook, 'qty_total_buy_MWh'] = qty_buy.sum().sum()/4
+                indicators.loc[obook, 'qty_total_buy_MWh'] = qty_buy.sum(min_count=1)/4
             if not self.all_books[obook].sellorders_all_df.empty:
                 qty_sell= self.all_books[obook].sellorders_all_df.groupby(by=['delivery_day', 'delivery_time','offer_daytime'])['quantity'].sum()
                 indicators.loc[obook, 'qty_av_av_sell'] = (qty_sell.unstack(level=[0,1])).mean().mean()
-                indicators.loc[obook, 'qty_total_sell_MWh'] =qty_sell.sum().sum()/4
+                indicators.loc[obook, 'qty_total_sell_MWh'] =qty_sell.sum(min_count=1)/4
             if not self.all_books[obook].cleared_buyorders_all_df.empty:
                 qty_buy_cleared= self.all_books[obook].cleared_buyorders_all_df.groupby(by=['delivery_day', 'delivery_time','offer_daytime'])['cleared_quantity'].sum()
                 indicators.loc[obook, 'qty_av_av_buy_cleared'] = (qty_buy_cleared.unstack(level=[0,1])).mean().mean()
-                indicators.loc[obook, 'qty_total_buy_cleared_MWh'] =qty_buy_cleared.sum().sum()/4
+                indicators.loc[obook, 'qty_total_buy_cleared_MWh'] =qty_buy_cleared.sum(min_count=1)/4
             if not self.all_books[obook].cleared_sellorders_all_df.empty:
                 qty_sell_cleared=self.all_books[obook].cleared_sellorders_all_df.groupby(by=['delivery_day', 'delivery_time','offer_daytime'])['cleared_quantity'].sum()
                 indicators.loc[obook, 'qty_av_av_sell_cleared'] = (qty_sell_cleared.unstack(level=[0,1])).mean().mean()
-                indicators.loc[obook, 'qty_total_sell_cleared_MWh'] =qty_sell_cleared.sum().sum()/4
+                indicators.loc[obook, 'qty_total_sell_cleared_MWh'] =qty_sell_cleared.sum(min_count=1)/4
 
             qty_sell=self.all_books[obook].sell_sum_quantity
             qty_buy=self.all_books[obook].buy_sum_quantity
@@ -619,36 +629,37 @@ class Reports():
             qty_buy_cleared=self.all_books[obook].cleared_buy_sum_quantity
 
             indicators.loc[obook, 'price_med_wav_sell'] = (self.all_books[obook].sell_wm_price * qty_sell/(
-                    qty_sell.sum().T)).sum().median()
+                    qty_sell.sum(min_count=1))).sum(min_count=1).median()
             indicators.loc[obook, 'price_med_wav_buy'] = (self.all_books[obook].buy_wm_price * qty_buy/(
-                    qty_buy.sum().T)).sum().median()
+                    qty_buy.sum(min_count=1))).sum(min_count=1).median()
             indicators.loc[obook, 'price_med_wav_sell_cleared'] = (self.all_books[obook].cleared_sell_wm_price * qty_sell_cleared/(
-                    qty_sell_cleared.sum().T)).sum().median()
+                    qty_sell_cleared.sum(min_count=1))).sum(min_count=1).median()
             indicators.loc[obook, 'price_med_wav_buy_cleared'] = (self.all_books[obook].cleared_buy_wm_price * qty_buy_cleared/(
-                    qty_buy_cleared.sum().T)).sum().median()
+                    qty_buy_cleared.sum(min_count=1))).sum(min_count=1).median()
 
             indicators.loc[obook,'price_med_wav_spread'] =  indicators.loc[obook,
                           'price_med_wav_sell_cleared'] - indicators.loc[obook, 'price_med_wav_buy_cleared']
 
-
-        indicators['total_qty_cleared [%]'] =(indicators[['qty_total_sell_cleared_MWh',
-                  'qty_total_buy_cleared_MWh']].sum(axis=1))/(
-            indicators[['qty_total_sell_cleared_MWh','qty_total_buy_cleared_MWh']].sum().sum()) *100
+        indicators['total_qty_cleared [%]'] =((indicators[['qty_total_sell_cleared_MWh',
+                  'qty_total_buy_cleared_MWh']].sum(axis=1,min_count=1))/(
+            indicators[['qty_total_sell_cleared_MWh','qty_total_buy_cleared_MWh']
+                       ].sum(min_count=1).sum(min_count=1))).fillna(value=np.nan) *100
 
         all_returns =DataFrame(index=['DA_return','ID_return','RD_return', 'BE_return','IB_return'])
         all_profit_loss =DataFrame(index=['total_dispatch_costs', 'profit'])
 
         for agent in self.model.schedule.agents:
             all_returns= pd.concat([all_returns,agent.financial_return[[
-                     'DA_return','ID_return','RD_return', 'BE_return','IB_return']].sum()], axis=1)
-            all_profit_loss=pd.concat([all_profit_loss,agent.financial_return[['total_dispatch_costs', 'profit']].sum()],axis=1)
+                     'DA_return','ID_return','RD_return', 'BE_return','IB_return']].sum(min_count=1)], axis=1)
+            all_profit_loss=pd.concat([all_profit_loss,agent.financial_return[
+                ['total_dispatch_costs', 'profit']].sum()],axis=1)
 
         all_profit_loss=all_profit_loss.sum(axis=1)
         all_profit_loss['system_operations_cost'] = self.model.aGridAndSystemOperator.financial_return['total_return'].sum()
         all_profit_loss.rename({'profit': 'market_profit', 'total_dispatch_costs':'total_dispatch_cost'}, inplace=True)
         all_profit_loss['cost_of_electricity'] =all_profit_loss['total_dispatch_cost'] -all_profit_loss['market_profit']
 
-        all_returns=all_returns.abs().sum(axis=1)
+        all_returns=all_returns.abs().sum(min_count=1,axis=1).fillna(value=np.nan)
         #to avoid double counting of IDM returns (sellers and buyers)
         all_returns['ID_return'] =all_returns['ID_return']/2
         if 'IDM' in indicators.index:
@@ -659,7 +670,8 @@ class Reports():
             indicators.loc['RDM', 'return'] = all_returns['RD_return']
         if 'BEM' in indicators.index:
             indicators.loc['BEM', 'return'] = all_returns['BE_return']
-        indicators['return [%]'] =indicators['return']/indicators['return'].sum()*100
+        indicators['return [%]'] =indicators['return']/indicators['return'].sum(min_count=1
+                                                                                )*100
         return(indicators, all_profit_loss)
 
     def final_keyfigures(self):
@@ -671,15 +683,17 @@ class Reports():
         unit_lst=[]
 
         index_lst+=list(self.model.aGridAndSystemOperator.system_transactions.sum().index)
-        value_lst+=list((self.model.aGridAndSystemOperator.system_transactions.sum()/4).values)
+        value_lst+=list((self.model.aGridAndSystemOperator.system_transactions.sum(min_count=1)/4
+                         ).fillna(value=np.nan).values)
         unit_lst+=['MWh','MWh','MWh','MWh','MWh','MWh','MWh','MWh','MWh']
 
         index_lst+=list(self.model.aGridAndSystemOperator.imbalances.sum().index)
-        value_lst+=list((self.model.aGridAndSystemOperator.imbalances.sum()/4).values)
+        value_lst+=list((self.model.aGridAndSystemOperator.imbalances.sum(min_count=1)/4
+                         ).fillna(value=np.nan).values)
         unit_lst+=['MWh','MWh','MWh','MWh','MWh','MWh']
 
         index_lst+=list(self.redispatch_PI().sum().index)
-        value_lst+=list((self.redispatch_PI().sum()/4).values)
+        value_lst+=list((self.redispatch_PI().sum(min_count=1)/4).fillna(value=np.nan).values)
         unit_lst+=['MWh','MWh','MWh','MWh','MWh','MWh','MWh','MWh','MWh','MWh','MWh']
 
         if not self.redispatch_supply_demand_ratio() is None:
@@ -688,7 +702,8 @@ class Reports():
             unit_lst+=['p.u. of redispatch demand upwards','p.u. of redispatch demand downwards']
 
         index_lst+=list(self.model.aGridAndSystemOperator.financial_return.sum().index)
-        value_lst+=list(self.model.aGridAndSystemOperator.financial_return.sum().values)
+        value_lst+=list(self.model.aGridAndSystemOperator.financial_return.sum(min_count=1
+                                                                               ).fillna(value=np.nan).values)
         unit_lst+=['€','€','€','€','€']
 
         index_lst+=list(allprofitloss.index)

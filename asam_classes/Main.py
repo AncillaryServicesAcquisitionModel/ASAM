@@ -33,9 +33,9 @@ def read_input_data(path,filename):
 
     #prepare parameters for model
     print('read exogenious data')
-    simulation_parameters =pd.read_excel(path+filename, sheetname=None)
-    simulation_parameters['da_residual_load'] = pd.read_excel(path+filename, sheetname='da_residual_load', header =[0,1])
-    simulation_parameters['simulation_task'] = pd.read_excel(path+filename, sheetname='simulation_task', index_col=0).squeeze()
+    simulation_parameters =pd.read_excel(path+filename, sheet_name=None)
+    simulation_parameters['da_residual_load'] = pd.read_excel(path+filename, sheet_name='da_residual_load', header =[0,1])
+    simulation_parameters['simulation_task'] = pd.read_excel(path+filename, sheet_name='simulation_task', index_col=0).squeeze()
 
     #get IBP kde pdfs from hdf5 file
     IBP_kde_pdfs = pd.read_hdf(path+'IBP_pdf_kernels_allISPcs_20201213.h5', 'IBP_pdf_kernels')
@@ -46,10 +46,14 @@ def read_input_data(path,filename):
 """directories to be entered"""
 #input directory
 idir=r'input_data/'
+
 #output directory
 rdir=r'results/'
+
 #filename
-iname = "example_scenario.xlsx"
+iname = "Input_data.xlsx"
+
+
 
 #read simulation input file
 simulation_parameters = read_input_data(idir, iname)
@@ -83,6 +87,7 @@ congestionsdf = model.exodata.congestions
 agent_strategiesdf = model.exodata.agent_strategies
 market_rulesdf = model.exodata.market_rules
 forecast_errorsdf = model.exodata.forecast_errors
+
 
 
 ###excel writing main input data

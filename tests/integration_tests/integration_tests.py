@@ -30,7 +30,9 @@ import os
 
 
 pd.options.mode.chained_assignment = None  # default='warn'
+
 def read_input_data(path,filename):
+
     """
     - Method: Exogenous data for the simulation and test reference results are read from excel
     - path is the file directory
@@ -41,13 +43,13 @@ def read_input_data(path,filename):
     """
     #prepare parameters for model
     print('read exogenious data')
-    simulation_parameters = pd.read_excel(os.path.join(path,filename), sheetname=None)
-    simulation_parameters['da_residual_load'] = pd.read_excel(os.path.join(path,filename), sheetname='da_residual_load', header =[0,1])
-    simulation_parameters['simulation_task'] = pd.read_excel(os.path.join(path,filename), sheetname='simulation_task', index_col=0).squeeze()
-    baseline_results =pd.read_excel(os.path.join(path+r'\baseline_results','Baseline_'+filename), sheetname=None)
+    simulation_parameters = pd.read_excel(os.path.join(path,filename), sheet_name=None)
+    simulation_parameters['da_residual_load'] = pd.read_excel(os.path.join(path,filename), sheet_name='da_residual_load', header =[0,1])
+    simulation_parameters['simulation_task'] = pd.read_excel(os.path.join(path,filename), sheet_name='simulation_task', index_col=0).squeeze()
+    baseline_results =pd.read_excel(os.path.join(path+r'\baseline_results','Baseline_'+filename), sheet_name=None)
     #add allreturns as sum
     try:
-        baseline_results['all_returns'] =pd.read_excel(os.path.join(path+r'\baseline_results','Baseline_'+filename),sheetname ='all_returns', index_col=0, header=[0,1]).sum().unstack()
+        baseline_results['all_returns'] =pd.read_excel(os.path.join(path+r'\baseline_results','Baseline_'+filename),sheet_name ='all_returns', index_col=0, header=[0,1]).sum(numeric_only=True).unstack()
     except:
         baseline_results['all_returns'] = DataFrame()
 #    #get IBP kde pdfs from hdf5 file
@@ -62,29 +64,27 @@ def join_the_simu_data(res_dict):
     Input: res_dict is dictionary with two keys: test scenario name and baseline of the scenario. The entries contain all results per simulation
     """
     joint_dict={}
+
     #Result data set to be joined
-    dset = ['simulation_input', 'key_figures','performance_indicators','interdependence_indicators',
+    dset = ['simulation_input','key_figures','performance_indicators','interdependence_indicators',
         'IDbuyorders', 'IDsellorders', 'RDMbuyorders','RDMsellorders', 'BEsellorders','BEbuyorders',
         'RDMc_sellorders', 'RDMc_buyorders', 'cleared_prices','all_returns',  'IDc_sellorders',
         'IDc_buyorders','RDM_demand_downward','RDM_demand_upward']
     #make joint multiindex columns df from various simulations per data set
     for res in dset:
-        try:
-            if res == 'simulation_input':
-                #remove simulation-specific values
-                for simu in all_simus:
-                    res_dict[simu][res]=res_dict[simu][res].set_index(
-                        'parameter').drop(labels=[
-                                'simulation_name','sim_start_time','sim_end_time','sim_run_time'],axis=0
-                                ).reset_index()
+        if res == 'simulation_input':
+            #remove simulation-specific values
+            for simu in all_simus:
+                res_dict[simu][res]=res_dict[simu][res].set_index(
+                    'parameter').drop(labels=[
+                            'simulation_name','sim_start_time','sim_end_time','sim_run_time'],axis=0
+                            ).reset_index()
 
-            df= pd.concat([res_dict[simu][res] for simu in all_simus],axis=1,keys=all_simus).swaplevel(
-                0,1,axis=1).sort_index(axis=1, ascending=True,level=[0,1])
-        except:
-            import pdb
-            pdb.set_trace()
+        df= pd.concat([res_dict[simu][res] for simu in all_simus],axis=1,keys=all_simus).swaplevel(
+            0,1,axis=1).sort_index(axis=1, ascending=True,level=[0,1])
         joint_dict[res]=df
     return(joint_dict)
+
 
 """directories to be entered"""
 #input directory
@@ -93,9 +93,8 @@ idir=r"C:\test_input_data\\"
 rdir=r"C:\test_results\\"
 
 
-
 #Files names of test scenarios
-inames = ['test_scenario_1.xlsx','test_scenario_2.xlsx','test_scenario_3.xlsx']
+inames = ['test_scenario_1.xlsx','test_scenario_2.xlsx','test_scenario_3.xlsx', 'test_scenario_4.xlsx']
 
 
 overview_test_results =DataFrame(index=inames, columns=['number_unequal_result_parameters','unequal_results'])
@@ -133,7 +132,7 @@ for iname in inames:
     simulation_task['sim_start_time'] = simulation_start_time
     simulation_task['sim_end_time'] = simulation_end_time
     simulation_task['sim_run_time'] = str(simulation_run_time)
-    simname=simulation_task['simulation_name']+'_'
+    simname=simulation_task['simulation_name']
     assetsdf = model.exodata.get_all_assets()
     congestionsdf = model.exodata.congestions
     agent_strategiesdf = model.exodata.agent_strategies
@@ -194,8 +193,8 @@ for iname in inames:
 
     bb=0
     for a in all_collections:
-        if not a.empty:
-            a.to_excel(writer,sheet_name=collection_names[bb])
+        # if not a.empty:
+        a.to_excel(writer,sheet_name=collection_names[bb])
         bb+=1
 
     model.rpt.get_cleared_prices().to_excel(writer,sheet_name='cleared_prices')
@@ -206,12 +205,13 @@ for iname in inames:
 
     """>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"""
     print("Comparing test results with baseline results")
+
     #compare simulation results to baseline results
-    test_results  =pd.read_excel(os.path.join(rdir,'TestResults_'+simname+'.xlsx'), sheetname=None)
+    test_results  =pd.read_excel(os.path.join(rdir,'TestResults_'+simname+'.xlsx'), sheet_name=None)
     #add allreturns as sum
     try:
         test_results['all_returns'] =pd.read_excel(os.path.join(rdir,'TestResults_'+simname+'.xlsx'),
-                    sheetname ='all_returns', index_col=0, header=[0,1]).sum().unstack()
+                    sheet_name ='all_returns', index_col=0, header=[0,1]).sum(numeric_only=True).unstack()
     except:
         test_results['all_returns'] = DataFrame()
 
@@ -237,7 +237,10 @@ for iname in inames:
         unequal[param]=joint_dict[param[0]].loc[:, idx[param[1],:]]
 
     #Exclusion of parameters with random results
-    if simulation_parameters['market_rules']['IBM']['pricing_method'] is not 'exogenious':
+
+    if simulation_parameters['market_rules'].set_index('design_variable'
+                                                       )['IBM']['pricing_method'
+                                                                                ] != 'exogenious':
         #random IBM prices lead to unequal results when comparing simulations. Therefore they are excluded.
         #However, realised imbalance may lead to differences in costs, profits and returns.
         excl_param = [('cleared_prices', 'IBP_long'),
